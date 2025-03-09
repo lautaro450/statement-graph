@@ -123,3 +123,57 @@ class Statement(StructuredNode):
             "context": self.context,
             "created_at": self.created_at.isoformat() if self.created_at else None
         }
+"""
+Neo4j database models using neomodel
+"""
+import uuid
+from datetime import datetime
+from neomodel import (
+    StructuredNode, StringProperty, DateTimeProperty,
+    UniqueIdProperty, RelationshipTo, RelationshipFrom
+)
+
+class Statement(StructuredNode):
+    """
+    Statement node represents a subject-predicate-object triple with context
+    """
+    uuid = UniqueIdProperty()
+    label = StringProperty(required=True, index=True)
+    subject = StringProperty(required=True, index=True)
+    predicate = StringProperty(required=True, index=True)
+    object = StringProperty(required=True, index=True)
+    context = StringProperty(required=True, index=True)
+    created_at = DateTimeProperty(default_now=True)
+    
+    def save(self):
+        """
+        Override save method to auto-generate label from subject, predicate, object, and context
+        """
+        # Auto-generate label by concatenating subject, predicate, object, and context
+        self.label = f"{self.subject} {self.predicate} {self.object} {self.context}"
+        return super().save()
+    
+    def to_dict(self):
+        """Convert to dictionary representation"""
+        return {
+            "uuid": str(self.uuid),
+            "label": self.label,
+            "subject": self.subject,
+            "predicate": self.predicate,
+            "object": self.object,
+            "context": self.context,
+            "created_at": self.created_at.isoformat() if self.created_at else None
+        }
+
+
+class Topic(StructuredNode):
+    """
+    Topic node represents a category or subject area
+    """
+    uuid = UniqueIdProperty()
+    label = StringProperty(required=True, unique_index=True)
+    description = StringProperty(default="")
+    created_at = DateTimeProperty(default_now=True)
+    
+    # Define relationships
+    statements = RelationshipTo('Statement', 'CONTAINS')
