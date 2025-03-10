@@ -43,6 +43,16 @@ app.add_middleware(
 async def startup_event():
     """Initialize on startup"""
     logger.info("Starting up Statement Graph API...")
+    
+    # Initialize database connection
+    try:
+        from helpers.db_connect import verify_connection
+        if verify_connection():
+            logger.info("Neo4j database connection successful")
+        else:
+            logger.warning("Neo4j database connection failed, app may not function correctly")
+    except Exception as e:
+        logger.error(f"Error initializing database connection: {str(e)}")
 
 @app.get("/", include_in_schema=False)
 async def root():
