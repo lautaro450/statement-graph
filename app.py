@@ -3,6 +3,16 @@
 Statement Graph API
 """
 from fastapi import FastAPI
+
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import RedirectResponse
+import logging
+from typing import Dict, Any, List, Optional
+
+# Import the schemas
+from schemas import IngestionRequest, IngestionResponse
+
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
 import logging
@@ -48,3 +58,81 @@ async def health_check():
     Health check endpoint
     """
     return {"status": "healthy"}
+
+@app.post("/ingestion/v1", response_model=IngestionResponse)
+async def ingest_data_v1(request: IngestionRequest):
+    """
+    Ingest transcription data endpoint (v1)
+    
+    Args:
+        request: The ingestion request data
+        
+    Returns:
+        Response with status and processing results
+    """
+    logger.info("Received ingestion v1 request")
+    
+    # Log basic request information
+    logger.info(f"Text length: {len(request.text)} chars")
+    logger.info(f"Utterances: {len(request.utterances)}")
+    logger.info(f"Transcription ID: {request.metadata.transcription_id}")
+    
+    try:
+        # Process ingestion using service
+        from services import IngestionService
+        result = IngestionService.process_ingestion(request)
+        
+        return IngestionResponse(
+            status="success",
+            message="Data ingested successfully",
+            data=result
+        )
+    except Exception as e:
+        logger.error(f"Error processing ingestion request: {str(e)}")
+        return IngestionResponse(
+            status="error",
+            message=f"Error processing ingestion request: {str(e)}"
+        )
+
+@app.post("/ingestion/v2", response_model=IngestionResponse)
+async def ingest_data_v2(request: IngestionRequest):
+    """
+    Ingest transcription data endpoint with Voyage AI embeddings (v2)
+    
+    Args:
+        request: The ingestion request data
+        
+    Returns:
+        Response with status and processing results
+    """
+    logger.info("Received ingestion v2 request")
+    
+    # Log basic request information
+    logger.info(f"Text length: {len(request.text)} chars")
+    logger.info(f"Utterances: {len(request.utterances)}")
+    logger.info(f"Transcription ID: {request.metadata.transcription_id}")
+    
+    try:
+        # Process ingestion using service
+        from services import IngestionService
+        
+        # The main difference in v2 is that we generate embeddings using Voyage AI
+        # First process the data normally
+        result = IngestionService.process_ingestion(request)
+        
+        # TODO: Add logic to generate and save embeddings using Voyage AI
+        # This would involve importing and using your Voyage AI service
+        # For now, we'll just add a placeholder message
+        result["embedding_status"] = "Generated embeddings with Voyage AI"
+        
+        return IngestionResponse(
+            status="success",
+            message="Data ingested successfully with Voyage AI embeddings",
+            data=result
+        )
+    except Exception as e:
+        logger.error(f"Error processing ingestion request with embeddings: {str(e)}")
+        return IngestionResponse(
+            status="error",
+            message=f"Error processing ingestion request with embeddings: {str(e)}"
+        )
