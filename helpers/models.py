@@ -156,11 +156,29 @@ class Statement(StructuredNode):
     
     def pre_save(self):
         """
-        Called before save to ensure label is set correctly
+        Called before save to ensure label is set correctly.
+        This is a hook that neomodel calls automatically before saving.
         """
         # Always update the label before saving
         self.label = f"{self.subject} {self.predicate} {self.object} {self.context}"
+        # Call the parent class's pre_save method
         super().pre_save()
+    
+    def save(self):
+        """
+        Override save method to ensure the label is correctly set and saved
+        """
+        # The pre_save hook is automatically called by neomodel
+        # This explicit call to super().save() ensures we're using the standard saving flow
+        result = super().save()
+        
+        # Double-check that the label was saved correctly by using a direct Cypher query
+        from neomodel import db
+        query = "MATCH (s:Statement) WHERE s.uuid=$uuid SET s.label=$label"
+        params = {"uuid": str(self.uuid), "label": f"{self.subject} {self.predicate} {self.object} {self.context}"}
+        db.cypher_query(query, params)
+        
+        return result
     
     def refresh(self):
         """
