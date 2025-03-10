@@ -145,26 +145,34 @@ class Statement(StructuredNode):
     context = StringProperty(required=True, index=True)
     created_at = DateTimeProperty(default_now=True)
     
+    def __init__(self, *args, **kwargs):
+        """
+        Override initialization to set label if not provided
+        """
+        if 'subject' in kwargs and 'predicate' in kwargs and 'object' in kwargs and 'context' in kwargs and 'label' not in kwargs:
+            # Auto-generate label from subject, predicate, object, and context
+            kwargs['label'] = f"{kwargs['subject']} {kwargs['predicate']} {kwargs['object']} {kwargs['context']}"
+        super(Statement, self).__init__(*args, **kwargs)
+    
     def pre_save(self):
         """
-        Called before save to ensure label is set correctly.
+        Called before save to ensure label is set correctly
         """
-        # Auto-generate label by concatenating subject, predicate, object, and context
+        # Always update the label before saving
         self.label = f"{self.subject} {self.predicate} {self.object} {self.context}"
         super().pre_save()
     
-    def save(self):
+    def refresh(self):
         """
-        Override save method to auto-generate label from subject, predicate, object, and context
+        Refresh the node from the database and update label if needed
         """
-        # Auto-generate label by concatenating subject, predicate, object, and context
-        self.label = f"{self.subject} {self.predicate} {self.object} {self.context}"
-        # Force the label update in the database
-        props = self.deflate(self.__properties__, self)
-        query = "MATCH (n) WHERE id(n)=$self SET n.label=$label"
-        params = {"self": self.id, "label": self.label}
-        self.cypher(query, params)
-        return super().save()
+        super().refresh()
+        # Ensure label is correct after refresh
+        expected_label = f"{self.subject} {self.predicate} {self.object} {self.context}"
+        if self.label != expected_label:
+            self.label = expected_label
+            self.save()
+        return self
     
     def to_dict(self):
         """Convert to dictionary representation"""
