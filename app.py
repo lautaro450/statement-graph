@@ -7,7 +7,9 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
 import logging
+import os
 from typing import Dict, Any, List, Optional
+from dotenv import load_dotenv
 
 # Import the schemas
 from schemas import IngestionRequest, IngestionResponse
@@ -15,6 +17,16 @@ from schemas import IngestionRequest, IngestionResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
 import logging
+
+# Load environment variables
+load_dotenv()
+
+# Check for ANTHROPIC_API_KEY in environment
+anthropic_api_key = os.getenv("ANTHROPIC_API_KEY")
+if not anthropic_api_key:
+    logging.warning("ANTHROPIC_API_KEY not found in environment variables. Make sure it's set in Replit Secrets.")
+else:
+    logging.info("ANTHROPIC_API_KEY found in environment variables.")
 
 # Configure logging
 logging.basicConfig(

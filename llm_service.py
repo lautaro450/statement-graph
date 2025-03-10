@@ -28,6 +28,7 @@ class LLMService:
         """
         Initialize the LLM service with API keys
         """
+        # Try to get API key from Replit secrets first
         self.anthropic_api_key = os.getenv("ANTHROPIC_API_KEY")
         self.anthropic_model = os.getenv("ANTHROPIC_MODEL", "claude-3-7-sonnet-latest")
         self.langsmith_api_key = os.getenv("LANGSMITH_API_KEY")
@@ -38,7 +39,10 @@ class LLMService:
         # Set reasonable timeout values
         self.timeout = 60  # 60 seconds timeout for API calls
         
-        if not self.anthropic_api_key:
+        # Log availability of API key without revealing its value
+        if self.anthropic_api_key:
+            logger.info("Successfully loaded ANTHROPIC_API_KEY from environment variables")
+        else:
             logger.warning("ANTHROPIC_API_KEY not found in environment variables")
         
         if not self.langsmith_api_key or self.langsmith_api_key == "<your-api-key>":
