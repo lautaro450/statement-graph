@@ -9,60 +9,68 @@ from neomodel import config, db
 
 # Configure logging
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.DEBUG,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
 
-# Load environment variables from .env file
-load_dotenv(override=True)
+# Ensure the .env file is loaded from the correct location
+# Go up one directory from helpers to find the .env file in the project root
+script_dir = os.path.dirname(os.path.abspath(__file__))
+project_root = os.path.dirname(script_dir)  # Go up one directory to project root
+env_path = os.path.join(project_root, '.env')
+logger.info(f"Loading .env file from: {env_path}")
+print(f"Looking for .env file at: {env_path}")
 
-# Get credentials from environment variables
+# Load environment variables from .env file with force reload
+load_dotenv(env_path, override=True)
+
+# Get credentials from environment variables - print for debugging
 NEO4J_URI = os.getenv("NEO4J_URI")
 NEO4J_USERNAME = os.getenv("NEO4J_USERNAME")
 NEO4J_PASSWORD = os.getenv("NEO4J_PASSWORD")
 
-# Log connection details (masking password)
-logger.info(f"NEO4J_URI: {NEO4J_URI}")
-logger.info(f"NEO4J_USERNAME: {NEO4J_USERNAME}")
-if NEO4J_PASSWORD:
-    logger.info(f"NEO4J_PASSWORD: {'*' * len(NEO4J_PASSWORD)}")
-else:
-    logger.warning("NEO4J_PASSWORD not set!")
+# Print with masked password for debugging
+print(f"NEO4J_URI: {NEO4J_URI}")
+print(f"NEO4J_USERNAME: {NEO4J_USERNAME}")
+print(f"NEO4J_PASSWORD: {'*' * (len(NEO4J_PASSWORD) if NEO4J_PASSWORD else 0)}")
 
 # Check if all required environment variables are set
-if not all([NEO4J_URI, NEO4J_USERNAME, NEO4J_PASSWORD]):
-    logger.error("Missing Neo4j credentials. Check your environment variables or Replit Secrets.")
-    missing = []
-    if not NEO4J_URI: missing.append("NEO4J_URI")
-    if not NEO4J_USERNAME: missing.append("NEO4J_USERNAME") 
-    if not NEO4J_PASSWORD: missing.append("NEO4J_PASSWORD")
-    logger.error(f"Missing: {', '.join(missing)}")
-else:
-    # Configure neomodel with the correct connection string format
-    # For Neo4j Aura (cloud), we need to use bolt+s:// protocol
-    if NEO4J_URI.startswith("neo4j+s://"):
-        # Extract the hostname from URI
-        hostname = NEO4J_URI.replace("neo4j+s://", "")
-        # Set the connection URL properly for neomodel
-        config.DATABASE_URL = f"bolt+s://{NEO4J_USERNAME}:{NEO4J_PASSWORD}@{hostname}"
-    else:
-        # For local/other connections
-        if "://" in NEO4J_URI:
-            protocol, host = NEO4J_URI.split("://", 1)
-            if protocol == "neo4j":
-                config.DATABASE_URL = f"bolt://{NEO4J_USERNAME}:{NEO4J_PASSWORD}@{host}"
-            else:
-                config.DATABASE_URL = f"{protocol}://{NEO4J_USERNAME}:{NEO4J_PASSWORD}@{host}"
-        else:
-            # Default to bolt protocol if no protocol specified
-            config.DATABASE_URL = f"bolt://{NEO4J_USERNAME}:{NEO4J_PASSWORD}@{NEO4J_URI}"
+missing_vars = []
+if not NEO4J_URI:
+    missing_vars.append("NEO4J_URI")
+if not NEO4J_USERNAME:
+    missing_vars.append("NEO4J_USERNAME")
+if not NEO4J_PASSWORD:
+    missing_vars.append("NEO4J_PASSWORD")
 
-    logger.info(f"Database URL configured: {config.DATABASE_URL.replace(NEO4J_PASSWORD, '********')}")
+if missing_vars:
+    error_message = f"Missing required environment variables: {', '.join(missing_vars)}"
+    logger.error(error_message)
+    print(f"ERROR: {error_message}")
+else:
+    # Log that we got the variables
+    logger.info(f"Loaded NEO4J_URI: {NEO4J_URI}")
+    logger.info(f"Loaded NEO4J_USERNAME: {NEO4J_USERNAME}")
+    if NEO4J_PASSWORD:
+        # Print partial password for security
+        password_masked = NEO4J_PASSWORD[:4] + "*" * (len(NEO4J_PASSWORD) - 4)
+        logger.info(f"Loaded NEO4J_PASSWORD (partial): {password_masked}")
+    else:
+        logger.error("NEO4J_PASSWORD not loaded from .env file!")
+
+# Configure neomodel
+if not NEO4J_URI or not NEO4J_USERNAME or not NEO4J_PASSWORD:
+    logger.error("Missing Neo4j credentials. Check your .env file.")
+    sys.exit(1)
+
+# Properly format the connection URL based on URI format - always use bolt+s protocol
+host_port = NEO4J_URI.replace("neo4j+s://", "")
+config.DATABASE_URL = f"neo4j+s://{NEO4J_USERNAME}:{NEO4J_PASSWORD}@{host_port}"
 
 # Set other neomodel configurations    
 config.AUTO_INSTALL_LABELS = True  # Install labels automatically
-config.ENCRYPTED = NEO4J_URI.startswith("neo4j+s://")  # Use encryption for cloud connections
+config.ENCRYPTED = True  # Always use encryption for Neo4j connections
 
 def verify_connection():
     """

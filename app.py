@@ -1,51 +1,54 @@
 """
-Statement Graph API
-"""
-from fastapi import FastAPI
+FastAPI application for the Statement Graph API
 
+This API provides endpoints for ingesting text data, extracting semantic statements,
+and matching them to relevant topics. It uses a batch processing approach to optimize
+performance when processing large volumes of statements.
+"""
+import logging
+import os
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
-import logging
-import os
-from typing import Dict, Any, List, Optional
-from dotenv import load_dotenv
 
-# Import the schemas
-from schemas import IngestionRequest, IngestionResponse
-
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import RedirectResponse
-import logging
-
-# Load environment variables
-load_dotenv()
-
-# Check for ANTHROPIC_API_KEY in environment
-anthropic_api_key = os.getenv("ANTHROPIC_API_KEY")
-if not anthropic_api_key:
-    logging.warning("ANTHROPIC_API_KEY not found in environment variables. Make sure it's set in Replit Secrets.")
-else:
-    logging.info("ANTHROPIC_API_KEY found in environment variables.")
+from helpers.db_connect import verify_connection
+from core.schemas.schemas import IngestionRequest, IngestionResponse, TopicMatchingResult
+from core.services.services import IngestionService
 
 # Configure logging
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.DEBUG,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
 
-# Create FastAPI app
+# Create the FastAPI app with detailed documentation
 app = FastAPI(
     title="Statement Graph API",
-    description="API for Statement Graph",
+    description="""
+    API for extracting semantic statements from text and matching them to topics.
+    
+    Features:
+    - Text ingestion and statement extraction
+    - Topic matching with batch processing
+    - Neo4j graph database integration
+    
+    The API implements a batch processing approach for topic matching, which processes
+    statements in batches of 30 to optimize performance and prevent timeouts.
+    """,
     version="1.0.0",
+    docs_url="/docs",
+    redoc_url="/redoc",
+    openapi_url="/openapi.json",
+    swagger_ui_parameters={"defaultModelsExpandDepth": -1}
 )
+
+print("FastAPI app created, about to add CORS middleware")
 
 # Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["*"],  # Allow all origins in development
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -53,18 +56,28 @@ app.add_middleware(
 
 @app.on_event("startup")
 async def startup_event():
-    """Initialize on startup"""
+    """Initialize database connection on startup"""
+    print("Starting startup_event function")
     logger.info("Starting up Statement Graph API...")
     
-    # Initialize database connection
+    # Verify database connection
+    print("About to verify database connection")
     try:
-        from helpers.db_connect import verify_connection
         if verify_connection():
-            logger.info("Neo4j database connection successful")
+            logger.info("Successfully connected to Neo4j database")
+            app.state.db_connected = True
         else:
-            logger.warning("Neo4j database connection failed, app may not function correctly")
+            logger.warning("Failed to connect to Neo4j database, but continuing startup")
+            app.state.db_connected = False
+            # Don't exit here, as the app might still be useful for documentation/testing
+            # and we might reconnect later if the database becomes available
     except Exception as e:
-        logger.error(f"Error initializing database connection: {str(e)}")
+        print(f"Exception during database connection verification: {str(e)}")
+        logger.error(f"Exception during startup: {str(e)}")
+        app.state.db_connected = False
+        logger.warning("Continuing app startup despite database connection failure")
+    
+    print("Completed startup_event function")
 
 @app.get("/", include_in_schema=False)
 async def root():
@@ -73,100 +86,93 @@ async def root():
     """
     return RedirectResponse(url="/docs")
 
-@app.get("/health")
-async def health_check():
-    """
-    Health check endpoint
-    """
-    return {"status": "healthy"}
 
-@app.post("/ingestion/v1", response_model=IngestionResponse)
-async def ingest_data_v1(request: IngestionRequest):
+@app.post(
+    "/ingestion/v1",
+    response_model=IngestionResponse,
+    summary="Ingest transcription data",
+    description="""
+    Ingest transcription data and store it in the statement graph. 
+    
+    The service performs the following steps:
+    1. Extracts statements from the transcription using Claude 3.7
+    2. Stores statements in the Neo4j database
+    3. Matches statements with relevant topics using batch processing
+    4. Returns the processed results with topic matches
+    
+    The batch processing approach ensures efficient handling of large volumes of statements by processing them in smaller batches (30 statements per batch) to avoid timeouts and optimize API performance.
+    """,
+    tags=["Ingestion"],
+    status_code=200,
+    response_description="Successfully processed ingestion request with extracted statements and topic matches",
+)
+async def ingest_data(request: IngestionRequest) -> IngestionResponse:
     """
-    Ingest transcription data endpoint (v1)
-
+    Ingest transcription data endpoint
+    
     Args:
         request: The ingestion request data
-
+        
     Returns:
         Response with status and processing results
     """
-    logger.info("Received ingestion v1 request")
-
+    logger.info("Received ingestion request")
+    
     # Log basic request information
     logger.info(f"Text length: {len(request.text)} chars")
     logger.info(f"Utterances: {len(request.utterances)}")
     logger.info(f"Transcription ID: {request.metadata.transcription_id}")
-
-    try:
-        # Process ingestion using service
+    
+    # Log intent if specified
+    if request.intent:
+        logger.info(f"Intent specified: {request.intent}")
+    
+    # Check database connection status
+    if not hasattr(app.state, 'db_connected') or not app.state.db_connected:
+        logger.warning("Database not connected, will attempt to reconnect")
         try:
-            from core.services.services import IngestionService
-            # Use the method from the core services
-            result = IngestionService.process_ingestion_request(request)
-        except ImportError:
-            # Fallback to direct import if core module structure isn't set up
-            from services import IngestionService
-            # Use the method from the root services
-            result = IngestionService.process_ingestion(request)
-
-        return IngestionResponse(
-            status="success",
-            message="Data ingested successfully",
-            data=result
+            if verify_connection():
+                logger.info("Successfully reconnected to Neo4j database")
+                app.state.db_connected = True
+            else:
+                logger.error("Still unable to connect to Neo4j database")
+                raise HTTPException(
+                    status_code=503,
+                    detail="Database connection is unavailable. Please try again later."
+                )
+        except Exception as e:
+            logger.error(f"Error reconnecting to database: {str(e)}")
+            raise HTTPException(
+                status_code=503,
+                detail=f"Database connection error: {str(e)}"
+            )
+    
+    try:
+        # Process the ingestion request
+        result = IngestionService.process_ingestion_request(
+            request,
+            intent=request.intent
         )
+        logger.info("Ingestion request processing completed successfully")
+        return result
     except Exception as e:
         logger.error(f"Error processing ingestion request: {str(e)}")
-        return IngestionResponse(
-            status="error",
-            message=f"Error processing ingestion request: {str(e)}"
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error processing ingestion request: {str(e)}"
         )
 
-@app.post("/ingestion/v2", response_model=IngestionResponse)
-async def ingest_data_v2(request: IngestionRequest):
+
+if __name__ == "__main__":
     """
-    Ingest transcription data endpoint with Voyage AI embeddings (v2)
-
-    Args:
-        request: The ingestion request data
-
-    Returns:
-        Response with status and processing results
+    Run the application with Uvicorn
     """
-    logger.info("Received ingestion v2 request")
-
-    # Log basic request information
-    logger.info(f"Text length: {len(request.text)} chars")
-    logger.info(f"Utterances: {len(request.utterances)}")
-    logger.info(f"Transcription ID: {request.metadata.transcription_id}")
-
-    try:
-        # Process ingestion using service
-        try:
-            from core.services.services import IngestionService
-            # Use the method from the core services with embeddings enabled
-            result = IngestionService.process_ingestion_request(request, generate_embeddings=True)
-        except ImportError:
-            # Fallback to direct import if core module structure isn't set up
-            from services import IngestionService
-            # Use the method from the root services
-            result = IngestionService.process_ingestion(request)
-            # Add embedding flag
-            result["embedding_status"] = "Generated embeddings with Voyage AI"
-
-        # TODO: Add logic to generate and save embeddings using Voyage AI
-        # This would involve importing and using your Voyage AI service
-        # For now, we'll just add a placeholder message
-        result["embedding_status"] = "Generated embeddings with Voyage AI"
-
-        return IngestionResponse(
-            status="success",
-            message="Data ingested successfully with Voyage AI embeddings",
-            data=result
-        )
-    except Exception as e:
-        logger.error(f"Error processing ingestion request with embeddings: {str(e)}")
-        return IngestionResponse(
-            status="error",
-            message=f"Error processing ingestion request with embeddings: {str(e)}"
-        )
+    import uvicorn
+    
+    # Run the FastAPI application with Uvicorn
+    uvicorn.run(
+        "app:app",
+        host="0.0.0.0",
+        port=8000,
+        reload=True
+    )
