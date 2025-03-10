@@ -34,6 +34,7 @@ class IngestionRequest(BaseModel):
     text: str = Field(..., description="Full text of the transcription")
     utterances: List[Utterance] = Field(..., description="List of individual utterances with speaker and timing information")
     metadata: Metadata = Field(..., description="Additional information about the transcription")
+    intent: Optional[str] = Field(None, description="Optional processing intent")
     intent: Optional[str] = Field(None, description="Optional intent to guide topic generation and matching. For example, 'Extract action items', 'Focus on technical discussions', or 'Identify customer concerns'")
 
     model_config = {

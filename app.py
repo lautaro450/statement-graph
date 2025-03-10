@@ -7,9 +7,10 @@ performance when processing large volumes of statements.
 """
 import logging
 import os
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
+import os
 
 from helpers.db_connect import verify_connection
 from core.schemas.schemas import IngestionRequest, IngestionResponse, TopicMatchingResult
@@ -104,6 +105,91 @@ async def root():
     """,
     tags=["Ingestion"],
     status_code=200,
+
+@app.post(
+    "/ingestion/v2",
+    response_model=IngestionResponse,
+    summary="Ingest transcription data with Voyage AI embeddings",
+    description="""
+    Ingest transcription data with Voyage AI embeddings and store it in the statement graph.
+    
+    The service performs the following steps:
+    1. Extracts statements from the transcription
+    2. Generates embeddings for statements using Voyage AI
+    3. Stores statements and embeddings in the Neo4j database
+    4. Matches statements with relevant topics using batch processing
+    5. Returns the processed results with embeddings and topic matches
+    
+    This endpoint utilizes Voyage AI's state-of-the-art embedding models to enhance semantic search capabilities.
+    """,
+    tags=["Ingestion"],
+    status_code=200,
+    response_description="Successfully processed ingestion request with embeddings and topic matches",
+)
+async def ingest_data_v2(request: IngestionRequest) -> IngestionResponse:
+    """
+    Ingest transcription data with Voyage AI embeddings
+    
+    Args:
+        request: The ingestion request data
+        
+    Returns:
+        Response with status, embeddings and processing results
+    """
+    logger.info("Received ingestion v2 request (with embeddings)")
+    
+    # Check if VOYAGE_API_KEY is set
+    if not os.getenv("VOYAGE_API_KEY"):
+        logger.warning("VOYAGE_API_KEY environment variable not set")
+        raise HTTPException(
+            status_code=400,
+            detail="Voyage AI API key not configured. Please set the VOYAGE_API_KEY environment variable."
+        )
+    
+    # Log basic request information
+    logger.info(f"Text length: {len(request.text)} chars")
+    logger.info(f"Utterances: {len(request.utterances)}")
+    logger.info(f"Transcription ID: {request.metadata.transcription_id}")
+    
+    # Log intent if specified
+    if request.intent:
+        logger.info(f"Intent specified: {request.intent}")
+    
+    # Check database connection status
+    if not hasattr(app.state, 'db_connected') or not app.state.db_connected:
+        logger.warning("Database not connected, will attempt to reconnect")
+        try:
+            if verify_connection():
+                logger.info("Successfully reconnected to Neo4j database")
+                app.state.db_connected = True
+            else:
+                logger.error("Still unable to connect to Neo4j database")
+                raise HTTPException(
+                    status_code=503,
+                    detail="Database connection is unavailable. Please try again later."
+                )
+        except Exception as e:
+            logger.error(f"Error reconnecting to database: {str(e)}")
+            raise HTTPException(
+                status_code=503,
+                detail=f"Database connection error: {str(e)}"
+            )
+    
+    try:
+        # Process the ingestion request with embeddings
+        result = IngestionService.process_ingestion_v2(
+            request,
+            intent=request.intent
+        )
+        logger.info("Ingestion v2 request processing completed successfully with embeddings")
+        return result
+    except Exception as e:
+        logger.error(f"Error processing ingestion v2 request: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error processing ingestion request: {str(e)}"
+        )
+
     response_description="Successfully processed ingestion request with extracted statements and topic matches",
 )
 async def ingest_data(request: IngestionRequest) -> IngestionResponse:
