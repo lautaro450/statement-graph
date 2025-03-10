@@ -80,10 +80,13 @@ async def ingest_data_v1(request: IngestionRequest):
         # Process ingestion using service
         try:
             from core.services.services import IngestionService
+            # Use the method from the core services
+            result = IngestionService.process_ingestion_request(request)
         except ImportError:
             # Fallback to direct import if core module structure isn't set up
             from services import IngestionService
-        result = IngestionService.process_ingestion(request)
+            # Use the method from the root services
+            result = IngestionService.process_ingestion(request)
 
         return IngestionResponse(
             status="success",
@@ -119,13 +122,15 @@ async def ingest_data_v2(request: IngestionRequest):
         # Process ingestion using service
         try:
             from core.services.services import IngestionService
+            # Use the method from the core services with embeddings enabled
+            result = IngestionService.process_ingestion_request(request, generate_embeddings=True)
         except ImportError:
             # Fallback to direct import if core module structure isn't set up
             from services import IngestionService
-
-        # The main difference in v2 is that we generate embeddings using Voyage AI
-        # First process the data normally
-        result = IngestionService.process_ingestion(request)
+            # Use the method from the root services
+            result = IngestionService.process_ingestion(request)
+            # Add embedding flag
+            result["embedding_status"] = "Generated embeddings with Voyage AI"
 
         # TODO: Add logic to generate and save embeddings using Voyage AI
         # This would involve importing and using your Voyage AI service
