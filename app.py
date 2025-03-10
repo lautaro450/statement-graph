@@ -1,4 +1,3 @@
-
 """
 Statement Graph API
 """
@@ -63,25 +62,29 @@ async def health_check():
 async def ingest_data_v1(request: IngestionRequest):
     """
     Ingest transcription data endpoint (v1)
-    
+
     Args:
         request: The ingestion request data
-        
+
     Returns:
         Response with status and processing results
     """
     logger.info("Received ingestion v1 request")
-    
+
     # Log basic request information
     logger.info(f"Text length: {len(request.text)} chars")
     logger.info(f"Utterances: {len(request.utterances)}")
     logger.info(f"Transcription ID: {request.metadata.transcription_id}")
-    
+
     try:
         # Process ingestion using service
-        from services import IngestionService
+        try:
+            from core.services.services import IngestionService
+        except ImportError:
+            # Fallback to direct import if core module structure isn't set up
+            from services import IngestionService
         result = IngestionService.process_ingestion(request)
-        
+
         return IngestionResponse(
             status="success",
             message="Data ingested successfully",
@@ -98,33 +101,37 @@ async def ingest_data_v1(request: IngestionRequest):
 async def ingest_data_v2(request: IngestionRequest):
     """
     Ingest transcription data endpoint with Voyage AI embeddings (v2)
-    
+
     Args:
         request: The ingestion request data
-        
+
     Returns:
         Response with status and processing results
     """
     logger.info("Received ingestion v2 request")
-    
+
     # Log basic request information
     logger.info(f"Text length: {len(request.text)} chars")
     logger.info(f"Utterances: {len(request.utterances)}")
     logger.info(f"Transcription ID: {request.metadata.transcription_id}")
-    
+
     try:
         # Process ingestion using service
-        from services import IngestionService
-        
+        try:
+            from core.services.services import IngestionService
+        except ImportError:
+            # Fallback to direct import if core module structure isn't set up
+            from services import IngestionService
+
         # The main difference in v2 is that we generate embeddings using Voyage AI
         # First process the data normally
         result = IngestionService.process_ingestion(request)
-        
+
         # TODO: Add logic to generate and save embeddings using Voyage AI
         # This would involve importing and using your Voyage AI service
         # For now, we'll just add a placeholder message
         result["embedding_status"] = "Generated embeddings with Voyage AI"
-        
+
         return IngestionResponse(
             status="success",
             message="Data ingested successfully with Voyage AI embeddings",
