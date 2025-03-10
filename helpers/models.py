@@ -84,8 +84,7 @@ class Statement(StructuredNode):
         """
         # Always update the label before saving
         self.label = f"{self.subject} {self.predicate} {self.object} {self.context}"
-        # Call the parent class's pre_save method
-        super().pre_save()
+        # No need to call parent's pre_save as it doesn't exist in StructuredNode
 
     def save(self):
         """
